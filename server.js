@@ -22,7 +22,7 @@ app.get('/', (_req, res) => {
 });
 
 // ── Proxy ke Anthropic ────────────────────────────────────────────────────────
-app.post('api/chat', async (req, res) => {
+app.post('/api/chat', async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
