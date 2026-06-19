@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { KNOWLEDGE_BASE } from './knowledgeBase.js';
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -30,6 +31,9 @@ app.post('/api/chat', async (req, res) => {
   }
 
   try {
+    // Strip any system prompt sent by the client — KNOWLEDGE_BASE is always used server-side
+    const { system: _ignored, ...clientBody } = req.body;
+
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -38,7 +42,10 @@ app.post('/api/chat', async (req, res) => {
         'anthropic-version':'2023-06-01',
         'anthropic-beta':'prompt-caching-2024-07-31',
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify({
+        ...clientBody,
+        system: KNOWLEDGE_BASE,
+      }),
     });
 
     // Teruskan status dari Anthropic ke client
