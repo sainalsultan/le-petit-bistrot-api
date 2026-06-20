@@ -22,9 +22,10 @@ app.get('/', (_req, res) => {
   res.json({ status: 'ok', service: 'Le Petit Bistrot API' });
 });
 
-// ── Proxy ke Anthropic ────────────────────────────────────────────────────────
+// ── Proxy to Anthropic ────────────────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
+  const model = process.env.ANTHROPIC_MODEL;
 
   if (!apiKey) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY not found in .env' });
@@ -32,23 +33,24 @@ app.post('/api/chat', async (req, res) => {
 
   try {
     // Strip any system prompt sent by the client — KNOWLEDGE_BASE is always used server-side
-    const { system: _ignored, ...clientBody } = req.body;
+    const { system: _ignoredSystem, model: _ignoredModel, ...clientBody } = req.body;
 
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Content-Type':'application/json',
-        'x-api-key':apiKey,
-        'anthropic-version':'2023-06-01',
-        'anthropic-beta':'prompt-caching-2024-07-31',
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'prompt-caching-2024-07-31',
       },
       body: JSON.stringify({
         ...clientBody,
+        model: model || 'claude-haiku-4-5-20251001',
         system: KNOWLEDGE_BASE,
       }),
     });
 
-    // Teruskan status dari Anthropic ke client
+    // Send status from Anthropic to client
     res.status(anthropicRes.status);
 
     if (req.body.stream) {
