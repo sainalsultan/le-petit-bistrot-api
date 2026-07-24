@@ -1,10 +1,72 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { google } from 'googleapis';
 import { KNOWLEDGE_BASE } from './knowledgeBase.js';
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
+
+// ── Google Sheets ────────────────────────────────────────────────────────────
+const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID;
+const SHEET_NAME      = process.env.GOOGLE_SHEET_TAB_NAME || 'Bookings';
+const BOOKING_HEADERS = ['Timestamp', 'Nama', 'No. HP', 'Tanggal', 'Jam', 'Jumlah Tamu'];
+const REQUIRED_BOOKING_FIELDS = ['name', 'phone', 'date', 'time', 'guests'];
+
+const auth = new google.auth.GoogleAuth({
+  credentials: {
+    client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    // .env menyimpan \n sebagai teks literal — ubah kembali jadi newline asli
+    private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  },
+  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+});
+
+const sheetsClient = google.sheets({ version: 'v4', auth });
+
+// Pastikan baris header ada — dicek sekali lalu di-cache di memori
+let headerChecked = false;
+
+async function ensureHeaderRow() {
+  if (headerChecked) return;
+
+  const { data } = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!A1:F1`,
+  });
+
+  if (!data.values || data.values.length === 0) {
+    await sheetsClient.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!A1:F1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [BOOKING_HEADERS] },
+    });
+  }
+
+  headerChecked = true;
+}
+
+async function appendBookingToSheet(booking) {
+  await ensureHeaderRow();
+
+  await sheetsClient.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!A:F`,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: [[
+        new Date().toLocaleString('id-ID'),
+        booking.name,
+        booking.phone,
+        booking.date,
+        booking.time,
+        booking.guests,
+      ]],
+    },
+  });
+}
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigin = process.env.ALLOWED_ORIGIN || 'http://localhost:5173';
@@ -75,6 +137,30 @@ app.post('/api/chat', async (req, res) => {
     }
   } catch (err) {
     console.error('Proxy error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Simpan booking terkonfirmasi ke Google Sheets ──────────────────────────────
+app.post('/api/bookings', async (req, res) => {
+  if (!SPREADSHEET_ID || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+    return res.status(500).json({ error: 'Konfigurasi Google Sheets belum lengkap di .env' });
+  }
+
+  const booking = req.body || {};
+
+  const missing = REQUIRED_BOOKING_FIELDS.filter(
+    (f) => !booking[f] || String(booking[f]).trim() === ''
+  );
+  if (missing.length > 0) {
+    return res.status(400).json({ error: `Field wajib belum lengkap: ${missing.join(', ')}` });
+  }
+
+  try {
+    await appendBookingToSheet(booking);
+    res.json({ status: 'ok' });
+  } catch (err) {
+    console.error('Gagal menyimpan booking ke Google Sheets:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
