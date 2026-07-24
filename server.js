@@ -27,6 +27,25 @@ const sheetsClient = google.sheets({ version: 'v4', auth });
 // Pastikan baris header ada — dicek sekali lalu di-cache di memori
 let headerChecked = false;
 
+function getTimestampGMT8() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Makassar',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const values = Object.fromEntries(
+    parts.map(({ type, value }) => [type, value])
+  );
+
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
+}
+
 async function ensureHeaderRow() {
   if (headerChecked) return;
 
@@ -57,7 +76,7 @@ async function appendBookingToSheet(booking) {
     insertDataOption: 'INSERT_ROWS',
     requestBody: {
       values: [[
-        new Date().toLocaleString('id-ID'),
+        getTimestampGMT8(),
         booking.name,
         booking.phone,
         booking.date,
